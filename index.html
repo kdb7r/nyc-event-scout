@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NYC Event Scout</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .event-card {
+            transition: all 0.3s ease;
+        }
+        .event-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .category-chip {
+            transition: all 0.2s ease;
+        }
+        .category-chip:hover {
+            transform: scale(1.05);
+        }
+        .category-chip.active {
+            background-color: #3b82f6;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="mb-12 text-center">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">NYC Event Scout</h1>
+            <p class="text-gray-600 max-w-2xl mx-auto">Discover the best events happening in New York City, curated just for you.</p>
+        </header>
+
+        <!-- Controls -->
+        <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div class="flex-1">
+                    <label for="search" class="block text-sm font-medium text-gray-700 mb-1">Search Events</label>
+                    <div class="relative">
+                        <input type="text" id="search" placeholder="Music, Art, Tech..." 
+                               class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                    </div>
+                </div>
+                <div>
+                    <label for="sort" class="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
+                    <select id="sort" class="w-full md:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="date">Date (Soonest)</option>
+                        <option value="popular">Most Popular</option>
+                        <option value="price">Price (Low to High)</option>
+                    </select>
+                </div>
+                <button id="scrape-btn" class="mt-6 md:mt-0 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition duration-200 flex items-center justify-center gap-2">
+                    <i class="fas fa-sync-alt"></i> Refresh Events
+                </button>
+            </div>
+
+            <!-- Categories -->
+            <div class="mt-6">
+                <p class="text-sm font-medium text-gray-700 mb-2">Filter by Category</p>
+                <div class="flex flex-wrap gap-2" id="categories">
+                    <button class="category-chip px-4 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">All</button>
+                    <button class="category-chip px-4 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">Music</button>
+                    <button class="category-chip px-4 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">Art</button>
+                    <button class="category-chip px-4 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">Tech</button>
+                    <button class="category-chip px-4 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">Food</button>
+                    <button class="category-chip px-4 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">Networking</button>
+                    <button class="category-chip px-4 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">Workshop</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="hidden flex-col items-center justify-center py-12">
+            <div class="loading-spinner w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mb-4"></div>
+            <p class="text-gray-600">Scraping the best NYC events for you...</p>
+        </div>
+
+        <!-- Results -->
+        <div id="results">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="events-container">
+                <!-- Events will be injected here -->
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="hidden text-center py-12">
+            <i class="fas fa-calendar-times text-5xl text-gray-300 mb-4"></i>
+            <h3 class="text-xl font-medium text-gray-700 mb-2">No Events Found</h3>
+            <p class="text-gray-500 max-w-md mx-auto">Try adjusting your search or filters to find more events.</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM Elements
+            const scrapeBtn = document.getElementById('scrape-btn');
+            const eventsContainer = document.getElementById('events-container');
+            const loadingElement = document.getElementById('loading');
+            const emptyStateElement = document.getElementById('empty-state');
+            const searchInput = document.getElementById('search');
+            const sortSelect = document.getElementById('sort');
+            const categoryChips = document.querySelectorAll('.category-chip');
+            
+            // Mock data - in a real app, this would come from scraping lu.ma/nyc
+            // Note: Actual scraping would require a backend due to CORS restrictions
+            const mockEvents = [
+                {
+                    id: 1,
+                    title: "Jazz Night in Brooklyn",
+                    date: "2023-06-15T19:00:00",
+                    location: "Blue Note, Brooklyn",
+                    price: 25,
+                    image: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
+                    category: "Music",
+                    description: "An evening of smooth jazz with local artists and special guests.",
+                    attendees: 120,
+                    organizer: "NYC Jazz Collective"
+                },
+                {
+                    id: 2,
+                    title: "Tech Startup Mixer",
+                    date: "2023-06-18T18:30:00",
+                    location: "WeWork, Manhattan",
+                    price: 10,
+                    image: "https://images.unsplash.com/photo-1497366811353-6870744d04b2?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1469&q=80",
+                    category: "Tech",
+                    description: "Network with fellow entrepreneurs and tech enthusiasts.",
+                    attendees: 85,
+                    organizer: "NY Tech Meetup"
+                },
+                {
+                    id: 3,
+                    title: "Street Art Walking Tour",
+                    date: "2023-06-20T14:00:00",
+                    location: "Bushwick Collective, Brooklyn",
+                    price: 15,
+                    image: "https://images.unsplash.com/photo-1518693800322-4eb2c6b12c9e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
+                    category: "Art",
+                    description: "Explore NYC's vibrant street art scene with local artists.",
+                    attendees: 45,
+                    organizer: "Urban Art NYC"
+                },
+                {
+                    id: 4,
+                    title: "Food Truck Festival",
+                    date: "2023-06-22T12:00:00",
+                    location: "Queens Night Market",
+                    price: 0,
+                    image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
+                    category: "Food",
+                    description: "Sample cuisine from NYC's best food trucks all in one place.",
+                    attendees: 320,
+                    organizer: "NYC Foodie Collective"
+                },
+                {
+                    id: 5,
+                    title: "AI & Machine Learning Workshop",
+                    date: "2023-06-25T10:00:00",
+                    location: "NYU Tandon School of Engineering",
+                    price: 50,
+                    image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
+                    category: "Tech",
+                    description: "Hands-on workshop covering the latest in AI and ML technologies.",
+                    attendees: 60,
+                    organizer: "Future Tech NYC"
+                },
+                {
+                    id: 6,
+                    title: "Indie Film Screening",
+                    date: "2023-06-28T19:30:00",
+                    location: "Nitehawk Cinema, Williamsburg",
+                    price: 18,
+                    image: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
+                    category: "Art",
+                    description: "Premiere of new independent films with Q&A from directors.",
+                    attendees: 90,
+                    organizer: "NYC Indie Film Club"
+                }
+            ];
+            // Current filter state
+            let currentFilter = {
+                search: '',
+                category: 'All',
+                sort: 'date'
+            };
+            // Initialize the app
+            function init() {
+                renderEvents(mockEvents);
+                setupEventListeners();
+            }
+            // Set up event listeners
+            function setupEventListeners() {
+                scrapeBtn.addEventListener('click', handleScrapeClick);
+                searchInput.addEventListener('input', handleSearchInput);
+                sortSelect.addEventListener('change', handleSortChange);
+                
+                categoryChips.forEach(chip => {
+                    chip.addEventListener('click', () => handleCategoryClick(chip));
+                });
+            }
+            // Handle scrape button click
+            function handleScrapeClick() {
+                showLoading();
+                
+                // Simulate scraping delay
+                setTimeout(() => {
+                    hideLoading();
+                    renderEvents(mockEvents);
+                }, 1500);
+            }
+            // Handle search input
+            function handleSearchInput(e) {
+                currentFilter.search = e.target.value.toLowerCase();
+                filterAndRenderEvents();
+            }
+            // Handle sort change
+            function handleSortChange(e) {
+                currentFilter.sort = e.target.value;
+                filterAndRenderEvents();
+            }
+            // Handle category click
+            function handleCategoryClick(chip) {
+                // Update active state
+                categoryChips.forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+                
+                // Update filter
+                currentFilter.category = chip.textContent;
+                filterAndRenderEvents();
+            }
+            // Filter and render events based on current filters
+            function filterAndRenderEvents() {
+                let filteredEvents = [...mockEvents];
+                
+                // Apply search filter
+                if (currentFilter.search) {
+                    filteredEvents = filteredEvents.filter(event => 
+                        event.title.toLowerCase().includes(currentFilter.search) || 
+                        event.description.toLowerCase().includes(currentFilter.search) ||
+                        event.organizer.toLowerCase().includes(currentFilter.search)
+                    );
+                }
+                
+                // Apply category filter
+                if (currentFilter.category !== 'All') {
+                    filteredEvents = filteredEvents.filter(event => 
+                        event.category === currentFilter.category
+                    );
+                }
+                
+                // Apply sort
+                switch(currentFilter.sort) {
+                    case 'date':
+                        filteredEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
+                        break;
+                    case 'popular':
+                        filteredEvents.sort((a, b) => b.attendees - a.attendees);
+                        break;
+                    case 'price':
+                        filteredEvents.sort((a, b) => a.price - b.price);
+                        break;
+                }
+                
+                renderEvents(filteredEvents);
+            }
+            // Show loading state
+            function showLoading() {
+                loadingElement.classList.remove('hidden');
+                results.classList.add('hidden');
+                emptyStateElement.classList.add('hidden');
+            }
+            // Hide loading state
+            function hideLoading() {
+                loadingElement.classList.add('hidden');
+                results.classList.remove('hidden');
+            }
+            // Render events to the DOM
+            function renderEvents(events) {
+                if (events.length === 0) {
+                    emptyStateElement.classList.remove('hidden');
+                    eventsContainer.innerHTML = '';
+                    return;
+                }
+                
+                emptyStateElement.classList.add('hidden');
+                
+                eventsContainer.innerHTML = events.map(event => `
+                    <div class="event-card bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg">
+                        <div class="relative h-48 overflow-hidden">
+                            <img src="${event.image}" alt="${event.title}" class="w-full h-full object-cover">
+                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
+                                <span class="inline-block px-3 py-1 bg-white text-sm font-medium rounded-full">${event.category}</span>
+                            </div>
+                        </div>
+                        <div class="p-6">
+                            <div class="flex justify-between items-start mb-2">
+                                <h3 class="text-xl font-bold text-gray-800">${event.title}</h3>
+                                <span class="text-lg font-semibold text-blue-600">${event.price === 0 ? 'FREE' : '$' + event.price}</span>
+                            </div>
+                            <p class="text-gray-600 mb-4 line-clamp-2">${event.description}</p>
+                            
+                            <div class="flex items-center text-gray-500 text-sm mb-4">
+                                <i class="fas fa-map-marker-alt mr-2"></i>
+                                <span>${event.location}</span>
+                            </div>
+                            
+                            <div class="flex items-center justify-between text-sm text-gray-500">
+                                <div>
+                                    <i class="far fa-calendar-alt mr-2"></i>
+                                    <span>${formatDate(event.date)}</span>
+                                </div>
+                                <div>
+                                    <i class="fas fa-users mr-2"></i>
+                                    <span>${event.attendees} attending</span>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-4 pt-4 border-t border-gray-100">
+                                <p class="text-sm text-gray-500"><i class="far fa-user mr-2"></i>Hosted by ${event.organizer}</p>
+                            </div>
+                            
+                            <button class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200">
+                                Get Tickets
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            // Format date for display
+            function formatDate(dateString) {
+                const options = { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+                return new Date(dateString).toLocaleDateString('en-US', options);
+            }
+            // Initialize the app
+            init();
+        });
+    </script>
+</body>
+</html>
